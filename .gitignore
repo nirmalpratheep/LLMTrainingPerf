@@ -1,0 +1,64 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyTorch
+*.pth
+*.ckpt
+checkpoints/
+
+# Results and outputs
+results/
+comparison_results/
+*.json
+!pyproject.toml
+*.csv
+*.png
+*.jpg
+*.pdf
+
+# Profiler traces
+*.pt.trace.json
+*.prof
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model downloads (cached by HuggingFace)
+models/
+.cache/
