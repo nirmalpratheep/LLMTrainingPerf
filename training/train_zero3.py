@@ -31,6 +31,7 @@ def train_zero3(
     batch_size: int = 4,
     gradient_accumulation_steps: int = 1,
     num_steps: int = 50,
+    warmup_steps: int = 5,
     learning_rate: float = 1e-5,
     max_length: int = 2048,
     output_dir: str = "results/zero3",
@@ -45,6 +46,7 @@ def train_zero3(
         batch_size: Batch size per GPU
         gradient_accumulation_steps: Number of gradient accumulation steps
         num_steps: Number of training steps
+        warmup_steps: Number of warmup steps (excluded from metrics)
         learning_rate: Learning rate
         max_length: Maximum sequence length
         output_dir: Output directory for results
@@ -89,12 +91,52 @@ def train_zero3(
         world_size=world_size,
     )
     
-    # Initialize metrics tracker
-    metrics_tracker = MetricsTracker(rank=rank, world_size=world_size)
+    # GPU Cleanup before training
+    if rank == 0:
+        print("\nPerforming GPU cleanup...")
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    if world_size > 1:
+        dist.barrier()  # Sync all processes
     
-    # Training loop
+    # Warmup steps (don't count toward metrics)
+    if warmup_steps > 0 and rank == 0:
+        print(f"\nRunning {warmup_steps} warmup steps...")
+    
     model.train()
     optimizer.zero_grad()
+    
+    data_iter = iter(dataloader)
+    
+    for step in range(warmup_steps):
+        try:
+            batch = next(data_iter)
+        except StopIteration:
+            data_iter = iter(dataloader)
+            batch = next(data_iter)
+        
+        batch = {k: v.cuda() for k, v in batch.items()}
+        
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            outputs = model(**batch)
+            loss = outputs.loss / gradient_accumulation_steps
+        
+        loss.backward()
+        
+        if (step + 1) % gradient_accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+    
+    # Reset memory stats after warmup
+    torch.cuda.reset_peak_memory_stats()
+    if world_size > 1:
+        dist.barrier()
+    
+    if rank == 0:
+        print("Warmup complete. Starting actual training...\n")
+    
+    # Initialize metrics tracker (after warmup)
+    metrics_tracker = MetricsTracker(rank=rank, world_size=world_size)
     
     # Setup profiler if requested
     prof = None
@@ -108,8 +150,6 @@ def train_zero3(
             with_stack=True,
         )
         prof.start()
-    
-    data_iter = iter(dataloader)
     
     if rank == 0:
         pbar = tqdm(total=num_steps, desc="Training Zero3")
@@ -202,6 +242,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
     parser.add_argument("--num_steps", type=int, default=50)
+    parser.add_argument("--warmup_steps", type=int, default=5, help="Number of warmup steps")
     parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--max_length", type=int, default=2048)
     parser.add_argument("--output_dir", type=str, default="results/zero3")
@@ -215,6 +256,7 @@ def main():
         batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         num_steps=args.num_steps,
+        warmup_steps=args.warmup_steps,
         learning_rate=args.learning_rate,
         max_length=args.max_length,
         output_dir=args.output_dir,

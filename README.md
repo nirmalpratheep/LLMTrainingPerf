@@ -46,12 +46,39 @@ pip install -e .
 # Using bash (Linux/Mac)
 ./launch_comparison.sh 2  # for 2 GPUs
 
-# Using PowerShell (Windows)
-.\launch_comparison.ps1 2  # for 2 GPUs
 
 # Or manually with torchrun
 torchrun --nproc_per_node=2 compare_strategies.py
 ```
+
+### Finding Maximum Batch Sizes
+
+Before running the full comparison, find the maximum batch size each strategy can handle:
+
+```bash
+# Find max batch size for both strategies (recommended)
+python find_max_batch_size.py --nproc_per_node=2
+
+# Find max batch size for specific strategy
+python find_max_batch_size.py --strategy=zero3 --nproc_per_node=2
+
+# Use binary search (faster if you know rough bounds)
+python find_max_batch_size.py --search_method=binary --min_bs=1 --max_bs=32
+```
+
+This will automatically test increasing batch sizes until OOM and report the maximum for each strategy.
+
+### Complete Workflow (Recommended)
+
+For the best comparison, use the complete workflow script that:
+1. Finds maximum batch sizes for both strategies
+2. Runs full comparison with optimal batch sizes
+
+```bash
+./run_full_comparison.sh 2  # for 2 GPUs
+```
+
+This ensures you test both strategies at their maximum capacity for fair GPU utilization and memory comparison.
 
 ### Individual Strategy Testing
 
@@ -91,6 +118,17 @@ All training runs use these optimizations for fair comparison:
 3. **Fused AdamW**: Optimized optimizer with fused kernels
 4. **Gradient Accumulation**: Simulate larger batch sizes efficiently
 
+## 🧪 Benchmarking Best Practices
+
+The framework ensures clean, accurate measurements:
+
+- **Warmup Steps** (default: 5): Warm up CUDA kernels and torch.compile before metrics collection
+- **GPU Cleanup**: Automatic cache clearing and memory stats reset before each run
+- **Distributed Barriers**: All GPUs synchronized before/after warmup
+- **Inter-run Delays**: 3-second cooldown between configurations for clean state
+
+> All warmup steps are excluded from performance metrics to ensure measurements reflect steady-state performance.
+
 ## 📈 Metrics Tracked
 
 The framework collects comprehensive performance metrics:
@@ -129,6 +167,7 @@ python compare_strategies.py \
     --batch_sizes 2 4 8 16 \
     --grad_accum_steps 1 2 4 \
     --num_steps=50 \
+    --warmup_steps=5 \
     --nproc_per_node=2 \
     --output_dir=comparison_results
 ```
@@ -140,6 +179,7 @@ torchrun --nproc_per_node=2 training/train_zero2.py \
     --batch_size=4 \
     --gradient_accumulation_steps=2 \
     --num_steps=100 \
+    --warmup_steps=5 \
     --learning_rate=1e-5 \
     --max_length=2048 \
     --output_dir=results/zero2 \

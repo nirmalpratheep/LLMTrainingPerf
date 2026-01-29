@@ -19,6 +19,7 @@ def run_training(
     batch_size: int,
     gradient_accumulation_steps: int,
     num_steps: int,
+    warmup_steps: int,
     data_folder: str,
     nproc_per_node: int,
 ):
@@ -48,6 +49,7 @@ def run_training(
         f"--batch_size={batch_size}",
         f"--gradient_accumulation_steps={gradient_accumulation_steps}",
         f"--num_steps={num_steps}",
+        f"--warmup_steps={warmup_steps}",
         f"--output_dir={output_dir}",
     ]
     
@@ -58,6 +60,12 @@ def run_training(
     
     # Run training
     result = subprocess.run(cmd, check=True)
+    
+    # Small delay to allow GPU cleanup between runs
+    import time
+    if rank := 0:  # Only delay on rank 0 for cleaner output
+        print("Waiting 3 seconds for GPU cleanup...")
+        time.sleep(3)
     
     return f"{output_dir}/metrics.json"
 
@@ -259,6 +267,7 @@ def main():
     parser.add_argument("--batch_sizes", type=int, nargs="+", default=[2, 4, 8, 16], help="Batch sizes to test")
     parser.add_argument("--grad_accum_steps", type=int, nargs="+", default=[1, 2], help="Gradient accumulation steps to test")
     parser.add_argument("--num_steps", type=int, default=50, help="Number of training steps per config")
+    parser.add_argument("--warmup_steps", type=int, default=5, help="Number of warmup steps per config")
     parser.add_argument("--nproc_per_node", type=int, default=2, help="Number of GPUs")
     parser.add_argument("--output_dir", type=str, default="comparison_results", help="Output directory")
     parser.add_argument("--skip_training", action="store_true", help="Skip training and only generate plots from existing results")
@@ -278,6 +287,7 @@ def main():
                             batch_size=batch_size,
                             gradient_accumulation_steps=grad_accum,
                             num_steps=args.num_steps,
+                            warmup_steps=args.warmup_steps,
                             data_folder=args.data_folder,
                             nproc_per_node=args.nproc_per_node,
                         )
